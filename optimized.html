@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="맛있는 급식">
+    <meta name="theme-color" content="#f3e8ff">
+    <title>맛있는 급식 🍱</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+// ==========================================
+// 🔑 API 키 설정
+// ==========================================
+// 아래에 NEIS 오픈 API에서 발급받은 인증키를 입력하세요.
+// 
+// 📝 API 키 발급 방법:
+// 1. https://open.neis.go.kr 접속
+// 2. 회원가입 및 로그인
+// 3. '인증키 신청' 메뉴에서 신청
+// 4. 발급받은 키를 아래 YOUR_API_KEY_HERE 부분에 붙여넣기
+// 
+// 예시: const NEIS_API_KEY = 'abc123def456ghi789jkl012mno345pqr678stu901';
+// ==========================================
+
+const NEIS_API_KEY = '6c95ddeef5e0436893e707bf07c7dfc5';
+
+// ==========================================
+
+const SchoolLunchApp = () => {
+  const [schoolName, setSchoolName] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [selectedSchool, setSelectedSchool] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [mealData, setMealData] = useState(null);
+  const [weeklyData, setWeeklyData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [viewMode, setViewMode] = useState('daily'); // 'daily' or 'weekly'
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsSchoolInput, setSettingsSchoolInput] = useState('');
+  const [settingsSearchResults, setSettingsSearchResults] = useState([]);
+  const [settingsSearchLoading, setSettingsSearchLoading] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
+
+  // 로컬스토리지에서 데이터 불러오기 (자동 조회 제거)
+  useEffect(() => {
+    const savedDefaultSchool = localStorage.getItem('schoolLunchDefaultSchool');
+    
+    // 기본 학교가 저장되어 있으면 자동으로 로드 (급식 조회는 하지 않음)
+    if (savedDefaultSchool) {
+      const defaultSchool = JSON.parse(savedDefaultSchool);
+      setSelectedSchool(defaultSchool);
+      setSchoolName(defaultSchool.name);
+    }
+  }, []);
+
+  // 음식 이모지 매칭
+  const getFoodEmoji = (foodName) => {
+    const emojiMap = {
+      '밥': '🍚', '쌀': '🌾', '잡곡': '🌾',
+      '김치': '🥬', '배추': '🥬', '깍두기': '🥕',
+      '국': '🍲', '찌개': '🍲', '탕': '🍲',
+      '닭': '🍗', '치킨': '🍗',
+      '돼지': '🥓', '삼겹살': '🥓', '목살': '🥓',
+      '소고기': '🥩', '불고기': '🥩', '스테이크': '🥩',
+      '생선': '🐟', '고등어': '🐟', '갈치': '🐟', '삼치': '🐟',
+      '새우': '🦐', '오징어': '🦑',
+      '계란': '🥚', '달걀': '🥚',
+      '두부': '🧈', '콩': '🫘',
+      '당근': '🥕', '브로콜리': '🥦',
+      '고구마': '🍠', '감자': '🥔',
+      '우유': '🥛', '요구르트': '🥛',
+      '과일': '🍎', '사과': '🍎', '배': '🍐', '귤': '🍊', '바나나': '🍌',
+      '딸기': '🍓', '수박': '🍉', '포도': '🍇',
+      '빵': '🍞', '샌드위치': '🥪',
+      '스파게티': '🍝', '파스타': '🍝',
+      '피자': '🍕', '햄버거': '🍔',
+      '떡': '🍡', '떡볶이': '🍡',
+      '만두': '🥟', '군만두': '🥟',
+      '카레': '🍛', '볶음밥': '🍛',
+      '샐러드': '🥗', '상추': '🥗',
+      '김': '🟢', '미역': '🟢',
+      '라면': '🍜', '우동': '🍜',
+    };
+
+    for (const [key, emoji] of Object.entries(emojiMap)) {
+      if (foodName.includes(key)) return emoji;
+    }
+    return '🍽️';
+  };
+
+  // 알레르기 정보 하이라이트
+  const highlightAllergens = (text) => {
+    const allergens = ['대두', '밀', '우유', '계란', '땅콩', '새우', '게', '오징어', '고등어', '돼지고기', '복숭아', '토마토'];
+    let highlighted = text;
+    
+    allergens.forEach(allergen => {
+      if (text.includes(allergen)) {
+        highlighted = highlighted.replace(
+          new RegExp(allergen, 'g'),
+          `<span class="allergen">${allergen}</span>`
+        );
+      }
+    });
+    
+    return highlighted;
+  };
+
+  // 날짜 포맷팅 (YYYYMMDD)
+  const formatDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}${month}${day}`;
+  };
+
+  // 날짜 input용 포맷팅 (YYYY-MM-DD)
+  const formatDateForInput = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // 학교명으로 검색
+  const searchSchools = async (name) => {
+    if (!name || name.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    setSearchLoading(true);
+    try {
+      const url = `https://open.neis.go.kr/hub/schoolInfo?KEY=${NEIS_API_KEY}&Type=json&pIndex=1&pSize=100&SCHUL_NM=${encodeURIComponent(name)}`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (data.schoolInfo && data.schoolInfo[1]) {
+        const schools = data.schoolInfo[1].row;
+        setSearchResults(schools);
+      } else {
+        setSearchResults([]);
+      }
+    } catch (error) {
+      console.error('Error searching schools:', error);
+      setSearchResults([]);
+    }
+    setSearchLoading(false);
+  };
+
+  // 학교 선택
+  const selectSchool = (school) => {
+    const schoolData = {
+      name: school.SCHUL_NM,
+      officeCode: school.ATPT_OFCDC_SC_CODE,
+      schoolCode: school.SD_SCHUL_CODE,
+      address: school.ORG_RDNMA || school.ORG_RDNMA,
+    };
+    setSelectedSchool(schoolData);
+    setSchoolName(school.SCHUL_NM);
+    setSearchResults([]);
+    
+    // 자동으로 기본 학교로 저장
+    localStorage.setItem('schoolLunchDefaultSchool', JSON.stringify(schoolData));
+  };
+
+  // 급식 데이터 가져오기
+  const fetchMealData = async (date) => {
+    if (!selectedSchool) {
+      alert('학교를 먼저 검색하고 선택해주세요!');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const dateStr = formatDate(date);
+      console.log('🔍 급식 조회 - 날짜:', date, '포맷된 날짜:', dateStr);
+      const url = `https://open.neis.go.kr/hub/mealServiceDietInfo?KEY=${NEIS_API_KEY}&Type=json&pIndex=1&pSize=100&ATPT_OFCDC_SC_CODE=${selectedSchool.officeCode}&SD_SCHUL_CODE=${selectedSchool.schoolCode}&MLSV_YMD=${dateStr}`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+      console.log('📊 API 응답:', data);
+      
+      if (data.mealServiceDietInfo && data.mealServiceDietInfo[1]) {
+        const meals = data.mealServiceDietInfo[1].row;
+        // 중식만 필터링
+        const lunchData = meals.find(meal => meal.MMEAL_SC_NM === '중식') || meals[0];
+        setMealData(lunchData);
+      } else {
+        setMealData(null);
+      }
+    } catch (error) {
+      console.error('Error fetching meal data:', error);
+      alert('데이터를 불러오는데 실패했습니다. 학교를 다시 선택해주세요.');
+    }
+    setLoading(false);
+  };
+
+  // 주간 데이터 가져오기
+  const fetchWeeklyData = async () => {
+    if (!selectedSchool) return;
+
+    setLoading(true);
+    const weekly = [];
+    const startDate = new Date(selectedDate);
+    startDate.setDate(startDate.getDate() - startDate.getDay()); // 주의 시작일 (일요일)
+
+    for (let i = 0; i < 7; i++) {
+      const currentDate = new Date(startDate);
+      currentDate.setDate(startDate.getDate() + i);
+      
+      try {
+        const dateStr = formatDate(currentDate);
+        const url = `https://open.neis.go.kr/hub/mealServiceDietInfo?KEY=${NEIS_API_KEY}&Type=json&pIndex=1&pSize=100&ATPT_OFCDC_SC_CODE=${selectedSchool.officeCode}&SD_SCHUL_CODE=${selectedSchool.schoolCode}&MLSV_YMD=${dateStr}`;
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.mealServiceDietInfo && data.mealServiceDietInfo[1]) {
+          const meals = data.mealServiceDietInfo[1].row;
+          const lunchData = meals.find(meal => meal.MMEAL_SC_NM === '중식') || meals[0];
+          weekly.push({ date: currentDate, data: lunchData });
+        } else {
+          weekly.push({ date: currentDate, data: null });
+        }
+      } catch (error) {
+        weekly.push({ date: currentDate, data: null });
+      }
+    }
+    
+    setWeeklyData(weekly);
+    setLoading(false);
+  };
+
+  // 설정에서 학교 검색
+  const searchSchoolsInSettings = async (name) => {
+    if (!name || name.trim().length < 2) {
+      setSettingsSearchResults([]);
+      return;
+    }
+    setSettingsSearchLoading(true);
+    try {
+      const url = `https://open.neis.go.kr/hub/schoolInfo?KEY=${NEIS_API_KEY}&Type=json&pIndex=1&pSize=20&SCHUL_NM=${encodeURIComponent(name)}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.schoolInfo && data.schoolInfo[1]) {
+        setSettingsSearchResults(data.schoolInfo[1].row);
+      } else {
+        setSettingsSearchResults([]);
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      setSettingsSearchResults([]);
+    }
+    setSettingsSearchLoading(false);
+  };
+
+  // 설정에서 학교 선택
+  const selectSchoolInSettings = (school) => {
+    const schoolData = {
+      name: school.SCHUL_NM,
+      officeCode: school.ATPT_OFCDC_SC_CODE,
+      schoolCode: school.SD_SCHUL_CODE,
+    };
+    setSelectedSchool(schoolData);
+    setSchoolName(school.SCHUL_NM);
+    setSettingsSchoolInput(school.SCHUL_NM);
+    setSettingsSearchResults([]);
+    
+    // 자동으로 기본 학교로 저장
+    localStorage.setItem('schoolLunchDefaultSchool', JSON.stringify(schoolData));
+    alert(`✅ ${schoolData.name}이(가) 기본 학교로 설정되었습니다!`);
+    setShowSettings(false);
+    setSettingsSchoolInput('');
+  };
+
+  return (
+    <div className="min-h-screen p-3 sm:p-4 font-['Gowun_Dodum'] overflow-x-hidden" style={{
+      position: 'relative'
+    }}>
+      {/* 배경 이미지 (원본 선명도) */}
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundImage: 'url("./lunch-background.png")',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        backgroundAttachment: 'fixed',
+        pointerEvents: 'none',
+        zIndex: 0
+      }} />
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Gowun+Dodum&display=swap');
+        
+        * {
+          -webkit-tap-highlight-color: transparent;
+          -webkit-touch-callout: none;
+        }
+        
+        body {
+          -webkit-user-select: none;
+          user-select: none;
+          overscroll-behavior: none;
+        }
+        
+        input, button, textarea {
+          -webkit-user-select: text;
+          user-select: text;
+        }
+        
+        .allergen {
+          background-color: #FFE4E1;
+          color: #DC143C;
+          padding: 2px 6px;
+          border-radius: 4px;
+          font-weight: bold;
+        }
+        
+        .meal-card {
+          transition: all 0.3s ease;
+          animation: fadeInUp 0.5s ease;
+        }
+        
+        @media (hover: hover) {
+          .meal-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+          }
+        }
+        
+        @keyframes fadeInUp {
+          from {
+            opacity: 0;
+            transform: translateY(30px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        .emoji-float {
+          animation: float 3s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-10px); }
+        }
+        
+        .gradient-text {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+        
+        @media (max-width: 640px) {
+          .text-5xl { font-size: 2rem; }
+          .text-4xl { font-size: 1.875rem; }
+          .text-3xl { font-size: 1.5rem; }
+          .text-2xl { font-size: 1.25rem; }
+          .text-xl { font-size: 1rem; }
+          .text-lg { font-size: 0.95rem; }
+          .text-sm { font-size: 0.85rem; }
+          .text-xs { font-size: 0.75rem; }
+          
+          .gap-3 { gap: 0.5rem; }
+          .gap-4 { gap: 0.75rem; }
+          .gap-6 { gap: 1rem; }
+          .gap-8 { gap: 1.25rem; }
+          
+          .p-3 { padding: 0.5rem; }
+          .p-4 { padding: 0.75rem; }
+          .p-6 { padding: 1rem; }
+          .p-8 { padding: 1.25rem; }
+          .p-12 { padding: 1.5rem; }
+          .p-16 { padding: 2rem; }
+        }
+      `}</style>
+
+      <div className="max-w-6xl mx-auto relative" style={{ zIndex: 10 }}>
+        {/* 헤더 */}
+        <div className="text-center mb-6 sm:mb-8 pt-4 sm:pt-8 pb-4 sm:pb-6 px-4 sm:px-6 relative flex flex-col items-center">
+          <div className="inline-block px-6 sm:px-12 py-4 sm:py-6 rounded-3xl shadow-2xl" style={{
+            background: 'linear-gradient(135deg, rgba(147, 51, 234, 0.95) 0%, rgba(219, 39, 119, 0.95) 100%)',
+            backdropFilter: 'blur(10px)',
+            border: '2px solid rgba(255, 255, 255, 0.3)'
+          }}>
+            <h1 className="text-3xl sm:text-5xl font-bold text-white mb-2 sm:mb-3 flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
+              <span className="emoji-float">🍱</span>
+              <span>맛있는 급식</span>
+              <span className="emoji-float" style={{animationDelay: '1s'}}>🍱</span>
+            </h1>
+            <p className="text-white text-sm sm:text-lg">오늘의 점심 메뉴를 확인해보세요!</p>
+          </div>
+          
+          <div className="absolute top-0 right-0 flex gap-2 sm:gap-3">
+            <button
+              onClick={() => { 
+                setMealData(null); 
+                setWeeklyData([]); 
+                setViewMode('daily');
+                setSelectedSchool(null);
+                setSchoolName('');
+                setSearchResults([]);
+                setSelectedDate(new Date());
+              }}
+              className="bg-white p-2 sm:p-3 rounded-full shadow-lg active:shadow-md transition-all active:scale-95"
+              title="초기화"
+            >
+              <span className="text-xl sm:text-2xl">🔄</span>
+            </button>
+            <button
+              onClick={() => setShowSettings(true)}
+              className="bg-white p-2 sm:p-3 rounded-full shadow-lg active:shadow-md transition-all active:scale-95"
+              title="설정"
+            >
+              <span className="text-xl sm:text-2xl">⚙️</span>
+            </button>
+            <button
+              onClick={() => setShowInfo(true)}
+              className="bg-white p-2 sm:p-3 rounded-full shadow-lg active:shadow-md transition-all active:scale-95"
+              title="정보"
+            >
+              <span className="text-xl sm:text-2xl">ℹ️</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 설정 모달 */}
+        {showSettings && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 sm:p-4">
+            <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold gradient-text">⚙️ 설정</h2>
+                <button
+                  onClick={() => {
+                    setShowSettings(false);
+                    setSettingsSearchResults([]);
+                    setSettingsSchoolInput('');
+                  }}
+                  className="text-gray-500 hover:text-gray-700 text-2xl hover:rotate-90 transition-all"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-lg font-bold mb-3 text-gray-700">현재 선택된 학교</label>
+                  <div className="px-5 py-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border-2 border-purple-200 text-lg font-bold">
+                    {selectedSchool ? `🏫 ${selectedSchool.name}` : '선택된 학교 없음'}
+                  </div>
+                </div>
+                
+                <div className="relative">
+                  <label className="block text-lg font-bold mb-3 text-gray-700">🔍 학교 검색 및 선택</label>
+                  <input
+                    type="text"
+                    value={settingsSchoolInput}
+                    onChange={(e) => {
+                      setSettingsSchoolInput(e.target.value);
+                      searchSchoolsInSettings(e.target.value);
+                    }}
+                    placeholder="학교명을 입력하세요 (자동완성)"
+                    className="w-full px-5 py-4 border-2 border-purple-200 rounded-xl focus:outline-none focus:border-purple-400 text-lg"
+                  />
+                  
+                  {settingsSearchLoading && (
+                    <div className="absolute right-5 top-16 text-purple-600 font-bold">
+                      <span className="animate-spin inline-block">🔍</span> 검색중...
+                    </div>
+                  )}
+                  
+                  {settingsSearchResults.length > 0 && (
+                    <div className="mt-3 bg-white border-2 border-purple-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                      {settingsSearchResults.map((school, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => selectSchoolInSettings(school)}
+                          className="px-5 py-4 hover:bg-gradient-to-r hover:from-purple-50 hover:to-pink-50 cursor-pointer border-b last:border-b-0 transition-all"
+                        >
+                          <div className="font-bold text-lg text-gray-800 mb-1">🏫 {school.SCHUL_NM}</div>
+                          <div className="text-sm text-gray-600">📍 {school.ORG_RDNMA || school.ORG_RDNZC}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                
+                <div className="bg-gradient-to-r from-blue-50 to-purple-50 p-5 rounded-xl border-2 border-blue-200">
+                  <p className="text-sm text-gray-700 leading-relaxed text-center">
+                    💡 학교를 선택하면 자동으로 기본 학교로 저장되어<br/>다음 방문 시 자동으로 로드됩니다
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 정보 모달 */}
+        {showInfo && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 sm:p-4">
+            <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold gradient-text">만든 이</h2>
+                <button
+                  onClick={() => setShowInfo(false)}
+                  className="text-gray-500 hover:text-gray-700 text-2xl hover:rotate-90 transition-all"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="space-y-4">
+                <div className="text-center mb-6">
+                  <div className="text-6xl mb-3">🍱</div>
+                  <h3 className="text-2xl font-bold gradient-text mb-2">맛있는 급식</h3>
+                  <p className="text-gray-600 text-sm">학교 급식 정보를 쉽고 간편하게 확인하세요</p>
+                </div>
+
+                <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-xl border-2 border-purple-200 text-center">
+                  <p className="text-sm text-gray-700 leading-relaxed">
+                    <strong>배움, 나눔, 성장을 추구하는 연결주의자</strong><br/>
+                    <br/>
+                    맛있는 급식, 김진관(닷커넥터)<br/>
+                    © All Rights Reserved
+                  </p>
+                </div>
+
+                <div className="bg-gradient-to-r from-blue-50 to-cyan-50 p-4 rounded-xl border-2 border-blue-200 text-center">
+                  <p className="text-sm text-gray-700 leading-relaxed mb-3">
+                    <strong>🔗 더 알아보기</strong>
+                  </p>
+                  <a 
+                    href="https://litt.ly/dot_connector" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="inline-block w-full text-center bg-gradient-to-r from-blue-400 to-cyan-400 text-white py-2 px-4 rounded-xl font-bold hover:from-blue-500 hover:to-cyan-500 transition-all"
+                  >
+                    닷커넥터 방문하기 →
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 컨트롤 패널 */}
+            <div className="rounded-3xl shadow-xl p-4 sm:p-6 mb-4 sm:mb-6" style={{ background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(254, 249, 240, 0.98) 100%)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255, 255, 255, 0.5)' }}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 mb-3 sm:mb-4">
+                {/* 학교 검색 */}
+                <div className="relative">
+                  <label className="block text-sm font-medium mb-2 text-gray-700">🏫 학교 검색</label>
+                  <input
+                    type="text"
+                    value={schoolName}
+                    onChange={(e) => {
+                      setSchoolName(e.target.value);
+                      searchSchools(e.target.value);
+                    }}
+                    placeholder="학교명을 입력하세요 (예: 서울고등학교)"
+                    className="w-full px-4 py-3 border-2 border-purple-200 rounded-xl focus:outline-none focus:border-purple-400"
+                  />
+                  {searchLoading && (
+                    <div className="absolute right-4 top-11 text-purple-500">
+                      검색중...
+                    </div>
+                  )}
+                  
+                  {/* 검색 결과 드롭다운 */}
+                  {searchResults.length > 0 && (
+                    <div className="absolute z-10 w-full mt-2 bg-white border-2 border-purple-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                      {searchResults.map((school, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => selectSchool(school)}
+                          className="px-4 py-3 hover:bg-purple-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                        >
+                          <div className="font-bold text-gray-800">{school.SCHUL_NM}</div>
+                          <div className="text-sm text-gray-600">
+                            {school.ORG_RDNMA || school.ORG_RDNZC}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {school.ATPT_OFCDC_SC_NM}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {selectedSchool && (
+                    <div className="mt-2 px-3 py-2 bg-green-50 border-2 border-green-200 rounded-xl text-sm">
+                      <strong className="text-green-700">✓ 선택됨:</strong> {selectedSchool.name}
+                    </div>
+                  )}
+                </div>
+                
+                {/* 날짜 선택 */}
+                <div>
+                  <label className="block text-sm font-medium mb-2 text-gray-700">📅 날짜 선택</label>
+                  <input
+                    type="date"
+                    value={formatDateForInput(selectedDate)}
+                    onChange={(e) => {
+                      // 로컬 시간 기준으로 날짜 생성
+                      const [year, month, day] = e.target.value.split('-').map(Number);
+                      const newDate = new Date(year, month - 1, day);
+                      setSelectedDate(newDate);
+                      if (viewMode === 'daily') {
+                        fetchMealData(newDate);
+                      }
+                    }}
+                    className="w-full px-4 py-3 border-2 border-purple-200 rounded-xl focus:outline-none focus:border-purple-400"
+                  />
+                </div>
+              </div>
+              
+              <div className="flex gap-2 sm:gap-4 mb-4 sm:mb-6">
+                <button
+                  onClick={async () => { 
+                    setViewMode('daily'); 
+                    setWeeklyData([]);
+                    setMealData(null);
+                    // 약간의 지연 후 데이터 로드
+                    setTimeout(() => {
+                      fetchMealData(selectedDate);
+                    }, 50);
+                  }}
+                  disabled={loading}
+                  className={`flex-1 py-3 sm:py-4 px-2 sm:px-4 rounded-xl font-bold text-sm sm:text-lg transition-all active:scale-95 ${
+                    viewMode === 'daily' 
+                      ? 'bg-gradient-to-r from-purple-400 to-pink-400 text-white shadow-lg' 
+                      : 'bg-gray-200 text-gray-700 active:bg-gray-300'
+                  }`}
+                >
+                  🍱 일별 급식
+                </button>
+                <button
+                  onClick={async () => { 
+                    setViewMode('weekly'); 
+                    setMealData(null);
+                    setWeeklyData([]);
+                    // 약간의 지연 후 데이터 로드
+                    setTimeout(() => {
+                      fetchWeeklyData();
+                    }, 50);
+                  }}
+                  disabled={loading}
+                  className={`flex-1 py-3 sm:py-4 px-2 sm:px-4 rounded-xl font-bold text-sm sm:text-lg transition-all active:scale-95 ${
+                    viewMode === 'weekly' 
+                      ? 'bg-gradient-to-r from-purple-400 to-pink-400 text-white shadow-lg' 
+                      : 'bg-gray-200 text-gray-700 active:bg-gray-300'
+                  }`}
+                >
+                  📅 주간 급식
+                </button>
+                
+              </div>
+            </div>
+
+
+            {/* 로딩 중 */}
+            {loading && (
+              <div className="rounded-3xl shadow-xl p-8 sm:p-16 text-center" style={{ background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(254, 249, 240, 0.98) 100%)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255, 255, 255, 0.5)' }}>
+                <div className="text-5xl sm:text-7xl mb-4 sm:mb-6 float">🍱</div>
+                <p className="text-lg sm:text-2xl font-bold text-gray-600">급식 정보를 불러오는 중...</p>
+              </div>
+            )}
+
+            {/* 일별 급식 정보 */}
+            {viewMode === 'daily' && !loading && mealData && (
+              <div className="space-y-4 sm:space-y-6 mb-4 sm:mb-6">
+                {/* 메뉴 카드 */}
+                <div className="rounded-3xl shadow-xl p-6 sm:p-8 meal-card" style={{ background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(254, 249, 240, 0.98) 100%)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255, 255, 255, 0.5)' }}>
+                  <div className="flex justify-between items-start mb-4 sm:mb-6">
+                    <div className="flex-1">
+                      <h2 className="text-xl sm:text-3xl font-bold gradient-text mb-2">{mealData.SCHUL_NM}</h2>
+                      <p className="text-xs sm:text-sm text-gray-600">
+                        {selectedDate.toLocaleDateString('ko-KR', { 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric',
+                          weekday: 'long'
+                        })}
+                      </p>
+                    </div>
+                    <div className="text-4xl emoji-float">🍽️</div>
+                  </div>
+
+                  <div className="space-y-4 mb-6">
+                    <h3 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                      <span className="text-3xl">✨</span>
+                      오늘의 메뉴
+                    </h3>
+                    {mealData.DDISH_NM.split('<br/>').map((dish, idx) => {
+                      const cleanDish = dish.replace(/\([^)]*\)/g, '').trim();
+                      const emoji = getFoodEmoji(cleanDish);
+                      return (
+                        <div key={idx} className="flex items-start gap-3 p-3 bg-gradient-to-r from-pink-50 to-purple-50 rounded-xl">
+                          <span className="text-2xl">{emoji}</span>
+                          <span 
+                            className="text-lg flex-1"
+                            dangerouslySetInnerHTML={{ __html: highlightAllergens(dish) }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 칼로리 및 원산지 정보 */}
+                <div className="rounded-3xl shadow-xl p-8" style={{ background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(254, 249, 240, 0.98) 100%)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255, 255, 255, 0.5)' }}>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* 원산지 정보 */}
+                    {mealData.ORPLC_INFO && (
+                      <div className="lg:col-span-2">
+                        <h3 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+                          <span className="text-2xl">🌾</span>
+                          원산지 정보
+                        </h3>
+                        <div className="grid grid-cols-2 gap-2 text-sm text-gray-700">
+                          {mealData.ORPLC_INFO.split('<br/>').map((origin, idx) => (
+                            <div key={idx} className="p-2 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg">
+                              {origin}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* 칼로리 */}
+                    {mealData.CAL_INFO && (
+                      <div className="text-center flex flex-col justify-center">
+                        <h3 className="text-2xl font-bold mb-4 gradient-text">🔥 칼로리</h3>
+                        <div className="text-6xl font-bold text-orange-500">
+                          {mealData.CAL_INFO.replace(' Kcal', '')}
+                        </div>
+                        <div className="text-xl text-gray-600 mt-2">Kcal</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 급식 정보 없음 */}
+            {viewMode === 'daily' && !loading && !mealData && selectedSchool && (
+              <div className="rounded-3xl shadow-xl p-12 text-center" style={{ background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(254, 249, 240, 0.98) 100%)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255, 255, 255, 0.5)' }}>
+                <div className="text-6xl mb-4">🍽️</div>
+                <p className="text-2xl font-bold text-gray-600 mb-2">급식 정보가 없습니다</p>
+                <p className="text-gray-500">다른 날짜를 선택해주세요</p>
+              </div>
+            )}
+
+            {/* 주간 급식 */}
+            {viewMode === 'weekly' && weeklyData.length > 0 && (
+              <div className="rounded-3xl shadow-xl p-6 mb-6" style={{ background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(254, 249, 240, 0.98) 100%)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255, 255, 255, 0.5)' }}>
+                <h3 className="text-2xl font-bold mb-6 gradient-text flex items-center gap-2">
+                  <span className="text-3xl">📅</span>
+                  이번 주 급식
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+                  {weeklyData.map((item, idx) => (
+                    <div 
+                      key={idx}
+                      className={`p-4 rounded-xl cursor-pointer transition-all ${
+                        item.data 
+                          ? 'bg-gradient-to-br from-pink-50 to-purple-50 hover:shadow-lg' 
+                          : 'bg-gray-100'
+                      }`}
+                      onClick={() => item.data && setSelectedDate(item.date)}
+                    >
+                      <div className="text-center mb-2">
+                        <div className="font-bold text-gray-800">
+                          {item.date.toLocaleDateString('ko-KR', { weekday: 'short' })}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {item.date.getMonth() + 1}/{item.date.getDate()}
+                        </div>
+                      </div>
+                      {item.data ? (
+                        <div className="space-y-1">
+                          {item.data.DDISH_NM.split('<br/>').map((dish, i) => {
+                            const emoji = getFoodEmoji(dish);
+                            return (
+                              <div key={i} className="text-xs truncate flex items-center gap-1">
+                                <span>{emoji}</span>
+                                <span>{dish.replace(/\([^)]*\)/g, '')}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-400 text-center">급식없음</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+      </div>
+    </div>
+  );
+};
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<SchoolLunchApp />);
+    </script>
+</body>
+</html>
